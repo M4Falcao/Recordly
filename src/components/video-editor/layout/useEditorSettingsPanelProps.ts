@@ -6,6 +6,8 @@ import type { useAnnotationRegionCommands } from "../hooks/useAnnotationRegionCo
 import type { useAudioRegionCommands } from "../hooks/useAudioRegionCommands";
 import type { useCaptionCommands } from "../hooks/useCaptionCommands";
 import type { useClipRegionCommands } from "../hooks/useClipRegionCommands";
+import type { useEditorPlaybackControls } from "../hooks/useEditorPlaybackControls";
+import type { useTimelineProjection } from "../hooks/useTimelineProjection";
 import type { useZoomRegionCommands } from "../hooks/useZoomRegionCommands";
 import { SettingsPanel } from "../SettingsPanel";
 import type { useAppearanceState } from "../state/useAppearanceState";
@@ -25,8 +27,11 @@ type Input = {
 	autoCaptionController: ReturnType<typeof useAutoCaptionController>;
 	effectiveShowCursor: boolean;
 	handleShowCursorChange: (show: boolean) => void;
+	duration: number;
 	currentTime: number;
 	isPlaying: boolean;
+	playback: ReturnType<typeof useEditorPlaybackControls>;
+	projection: ReturnType<typeof useTimelineProjection>;
 	aspectRatio: AspectRatio;
 	setAspectRatio: Dispatch<SetStateAction<AspectRatio>>;
 	whisperExecutablePath: string | null;
@@ -54,8 +59,11 @@ export function useEditorSettingsPanelProps(input: Input): ComponentProps<typeof
 		autoCaptionController,
 		effectiveShowCursor,
 		handleShowCursorChange,
+		duration,
 		currentTime,
 		isPlaying,
+		playback,
+		projection,
 		aspectRatio,
 		setAspectRatio,
 		whisperExecutablePath,
@@ -206,7 +214,23 @@ export function useEditorSettingsPanelProps(input: Input): ComponentProps<typeof
 		onGenerateAutoCaptions: autoCaptionController.handleGenerateAutoCaptions,
 		onClearAutoCaptions: captionCommands.handleClearAutoCaptions,
 		captionCurrentTimeMs: Math.round(currentTime * 1000),
+		captionVideoDurationMs: Math.round(duration * 1000),
+		isVideoPlaying: isPlaying,
+		onTogglePlayPause: playback.togglePlayPause,
+		onSeekBySeconds: (deltaSeconds: number) =>
+			playback.handleSeek(
+				Math.max(
+					0,
+					Math.min(
+						projection.timelineDuration,
+						projection.timelinePlayheadTime + deltaSeconds,
+					),
+				),
+			),
 		selectedCaptionId: timeline.selectedCaptionId,
+		onSelectCaption: captionCommands.handleSelectCaption,
+		onAddManualCaption: captionCommands.handleAddManualCaption,
+		onImportCaptions: captionCommands.handleImportCaptions,
 		onBeginCaptionEdit: captionCommands.handleBeginCaptionEdit,
 		onCaptionTextEdit: captionCommands.handleCaptionTextEdit,
 		onCaptionRetime: captionCommands.handleCaptionRetime,

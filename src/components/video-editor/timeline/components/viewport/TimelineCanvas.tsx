@@ -47,6 +47,7 @@ import PlaybackCursor from "../playhead/PlaybackCursor";
 
 const HINT_CLIP = "Press C to split clip";
 const HINT_ANNOTATION = "Press A to add annotation";
+const HINT_CAPTION = "Click to add caption or press S";
 const HINT_AUDIO = "Click music icon to add audio";
 
 interface TimelineCanvasProps {
@@ -649,6 +650,7 @@ const TimelineCanvasRows = memo(function TimelineCanvasRows({
 				<Row
 					id={CAPTION_ROW_ID}
 					isEmpty={captionItems.length === 0}
+					hint={HINT_CAPTION}
 					onMouseEnter={onCaptionRowMouseEnter}
 					onMouseMove={onCaptionRowMouseMove}
 					onMouseLeave={onCaptionRowMouseLeave}

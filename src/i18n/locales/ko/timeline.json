@@ -37,5 +37,9 @@
 	},
 	"addSpeed": "속도 추가 (S)",
 	"resizeLeft": "왼쪽 크기 조절",
-	"resizeRight": "오른쪽 크기 조절"
+	"resizeRight": "오른쪽 크기 조절",
+	"caption": {
+		"label": "자막",
+		"addCaption": "자막 추가 (S)"
+	}
 }

@@ -1,6 +1,7 @@
 import {
 	CaretDown,
 	Check,
+	ClosedCaptioning,
 	Crop,
 	MagicWand,
 	MagnifyingGlassPlus,
@@ -266,6 +267,12 @@ export function EditorPreviewPanel(props: Props) {
 							>
 								{t("timeline.audio.label")}
 							</DropdownMenuItem>
+							<DropdownMenuItem
+								onClick={() => timelineRef.current?.addCaption()}
+								className="cursor-pointer text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+							>
+								{t("timeline.caption.label", "Caption")}
+							</DropdownMenuItem>
 						</DropdownMenuContent>
 					</DropdownMenu>
 					<div className="mx-1 h-4 w-px bg-foreground/10" />
@@ -295,6 +302,15 @@ export function EditorPreviewPanel(props: Props) {
 						title={t("editor.toolbar.splitClip")}
 					>
 						<Scissors className="h-4 w-4" />
+					</Button>
+					<Button
+						onClick={() => timelineRef.current?.addCaption()}
+						variant="ghost"
+						size="icon"
+						className="h-7 w-7 rounded-full text-muted-foreground transition-all hover:bg-[#f472b6]/15 hover:text-[#f472b6]"
+						title={t("timeline.caption.addCaption", "Add Caption (S)")}
+					>
+						<ClosedCaptioning className="h-4 w-4" />
 					</Button>
 				</div>
 

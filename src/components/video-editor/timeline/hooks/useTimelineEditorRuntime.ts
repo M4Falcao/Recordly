@@ -221,12 +221,17 @@ export function useTimelineEditorRuntime({
 		onZoomSuggested,
 	});
 
-	const { canPlaceCaptionAtMs, addCaptionAtMs, resolveCaptionSpanAtMs } =
-		useTimelineCaptionActions({
-			totalMs,
-			captionRegions: captionCues,
-			onCaptionAdded,
-		});
+	const {
+		canPlaceCaptionAtMs,
+		addCaptionAtMs,
+		resolveCaptionSpanAtMs,
+		handleAddCaptionAtPlayhead,
+	} = useTimelineCaptionActions({
+		totalMs,
+		currentTimeMs,
+		captionRegions: captionCues,
+		onCaptionAdded,
+	});
 
 	const handleSplitClip = useCallback(() => {
 		if (!videoDuration || videoDuration === 0 || totalMs === 0 || !onClipSplit) {
@@ -278,6 +283,7 @@ export function useTimelineEditorRuntime({
 		handleAddZoom,
 		handleSplitClip,
 		handleAddAnnotation: () => handleAddAnnotation(),
+		handleAddCaption: handleAddCaptionAtPlayhead,
 		deleteSelectedKeyframe,
 		deleteSelectedZoom,
 		deleteSelectedClip,
@@ -294,12 +300,14 @@ export function useTimelineEditorRuntime({
 			suggestZooms: handleSuggestZooms,
 			splitClip: handleSplitClip,
 			addAnnotation: handleAddAnnotation,
+			addCaption: handleAddCaptionAtPlayhead,
 			addAudio: handleAddAudio,
 			keyframes,
 		}),
 		[
 			handleAddAnnotation,
 			handleAddAudio,
+			handleAddCaptionAtPlayhead,
 			handleAddZoom,
 			handleSuggestZooms,
 			handleSplitClip,
@@ -330,6 +338,7 @@ export function useTimelineEditorRuntime({
 		canPlaceCaptionAtMs,
 		addCaptionAtMs,
 		resolveCaptionSpanAtMs,
+		handleAddCaptionAtPlayhead,
 		handleAddZoom,
 		handleSuggestZooms,
 		handleSplitClip,

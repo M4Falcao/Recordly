@@ -51,7 +51,9 @@ export function EditorSidebar({ t, activeSection, setActiveSection, settingsPane
 		<div className="flex flex-shrink-0 gap-1.5">
 			<div className="flex flex-shrink-0 flex-col items-center gap-0.5 px-2 py-2">
 				{sections.map((section) => {
-					const isActive = activeSection === section.id;
+					const isActive =
+						activeSection === section.id ||
+						(section.id === "captions" && activeSection === "caption");
 					return (
 						<div key={section.id} className="flex items-center">
 							<motion.button

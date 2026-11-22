@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { flattenCaptionWords } from "./captionLayout";
-import { deleteCue, mergeCues, retimeCue, splitCue } from "./captionOps";
+import {
+	DEFAULT_MANUAL_CAPTION_DURATION_MS,
+	deleteCue,
+	estimateCaptionDurationMs,
+	findNextAvailableCaptionSpan,
+	formatCaptionShortTimecode,
+	formatCaptionTimecode,
+	MAX_MANUAL_CAPTION_DURATION_MS,
+	mergeCaptionCues,
+	mergeCues,
+	parseCaptionTimecode,
+	retimeCue,
+	splitCue,
+} from "./captionOps";
 import type { CaptionCue } from "./types";
 
 function makeCues(): CaptionCue[] {
@@ -158,5 +171,71 @@ describe("captionOps.deleteCue", () => {
 	it("is a no-op for an unknown id", () => {
 		const cues = makeCues();
 		expect(deleteCue(cues, "missing")).toBe(cues);
+	});
+});
+
+describe("captionOps manual helpers", () => {
+	it("estimates duration from word count and clamps to bounds", () => {
+		expect(estimateCaptionDurationMs("   ")).toBe(DEFAULT_MANUAL_CAPTION_DURATION_MS);
+		expect(estimateCaptionDurationMs("Oi")).toBe(1_500);
+		expect(estimateCaptionDurationMs("one two three four five")).toBe(650 + 5 * 360);
+		expect(
+			estimateCaptionDurationMs(
+				"one two three four five six seven eight nine ten eleven twelve thirteen fourteen",
+			),
+		).toBe(MAX_MANUAL_CAPTION_DURATION_MS);
+	});
+
+	it("finds the next available non-overlapping span", () => {
+		const cues: CaptionCue[] = [
+			{ id: "a", startMs: 1_000, endMs: 2_500, text: "first" },
+			{ id: "b", startMs: 2_600, endMs: 4_000, text: "second" },
+		];
+
+		expect(
+			findNextAvailableCaptionSpan(cues, 0, {
+				durationMs: 2_000,
+				maxDurationMs: 10_000,
+			}),
+		).toEqual({ startMs: 0, endMs: 1_000 });
+
+		expect(
+			findNextAvailableCaptionSpan(cues, 1_200, {
+				durationMs: 2_000,
+				maxDurationMs: 10_000,
+			}),
+		).toEqual({ startMs: 4_000, endMs: 6_000 });
+
+		expect(
+			findNextAvailableCaptionSpan(cues, 3_900, {
+				durationMs: 2_000,
+				maxDurationMs: 4_200,
+			}),
+		).toBeNull();
+	});
+
+	it("formats and parses timecodes across formats", () => {
+		expect(formatCaptionTimecode(62_345)).toBe("1:02.345");
+		expect(formatCaptionShortTimecode(62_345)).toBe("1:02.3");
+
+		expect(parseCaptionTimecode("5")).toBe(5_000);
+		expect(parseCaptionTimecode("12.5")).toBe(12_500);
+		expect(parseCaptionTimecode("1:02.345")).toBe(62_345);
+		expect(parseCaptionTimecode("1:02,345")).toBe(62_345);
+		expect(parseCaptionTimecode("01:02:03,45")).toBe(3_723_450);
+		expect(parseCaptionTimecode("-1:00")).toBeNull();
+		expect(parseCaptionTimecode("1:75")).toBeNull();
+		expect(parseCaptionTimecode("not-a-time")).toBeNull();
+	});
+
+	it("merges or replaces cues in chronological order", () => {
+		const existing: CaptionCue[] = [{ id: "1", startMs: 3_000, endMs: 4_000, text: "later" }];
+		const incoming: CaptionCue[] = [{ id: "2", startMs: 500, endMs: 1_500, text: "earlier" }];
+
+		expect(mergeCaptionCues(existing, incoming, "replace")).toEqual(incoming);
+		expect(mergeCaptionCues(existing, incoming, "append").map((cue) => cue.id)).toEqual([
+			"2",
+			"1",
+		]);
 	});
 });

@@ -1,5 +1,6 @@
 import type { Span } from "dnd-timeline";
 import { useCallback } from "react";
+import { findNextAvailableCaptionSpan } from "../../../captionOps";
 import type { CaptionCue } from "../../../types";
 import { timelineNotifications } from "../utils/timelineNotifications";
 
@@ -9,6 +10,7 @@ export const DEFAULT_CAPTION_DURATION_MS = 1500;
 
 interface UseTimelineCaptionActionsParams {
 	totalMs: number;
+	currentTimeMs: number;
 	// Caption regions in timeline-ms (matches the hover position passed in).
 	captionRegions: CaptionCue[];
 	onCaptionAdded?: (span: Span) => void;
@@ -16,6 +18,7 @@ interface UseTimelineCaptionActionsParams {
 
 export function useTimelineCaptionActions({
 	totalMs,
+	currentTimeMs,
 	captionRegions,
 	onCaptionAdded,
 }: UseTimelineCaptionActionsParams) {
@@ -82,9 +85,28 @@ export function useTimelineCaptionActions({
 		[onCaptionAdded, totalMs, canPlaceCaptionAtMs, resolveCaptionSpanAtMs],
 	);
 
+	const handleAddCaptionAtPlayhead = useCallback(() => {
+		if (!onCaptionAdded || totalMs === 0) {
+			return;
+		}
+		const span = findNextAvailableCaptionSpan(captionRegions, currentTimeMs, {
+			durationMs: DEFAULT_CAPTION_DURATION_MS,
+			maxDurationMs: totalMs,
+		});
+		if (!span) {
+			timelineNotifications.error(
+				"Cannot place caption here",
+				"No space left on the caption track after this position.",
+			);
+			return;
+		}
+		onCaptionAdded({ start: span.startMs, end: span.endMs });
+	}, [captionRegions, currentTimeMs, onCaptionAdded, totalMs]);
+
 	return {
 		canPlaceCaptionAtMs,
 		addCaptionAtMs,
 		resolveCaptionSpanAtMs,
+		handleAddCaptionAtPlayhead,
 	};
 }

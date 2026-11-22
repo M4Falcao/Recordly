@@ -111,6 +111,9 @@ export function useTimelineEditingController(input: Input) {
 		timelineDuration: projection.timelineDuration,
 	});
 	const captionCommands = useCaptionCommands({
+		t: input.t,
+		durationMs: Math.round(input.duration * 1000),
+		currentTimeMs: Math.round(input.currentTime * 1000),
 		autoCaptions: timeline.autoCaptions,
 		setAutoCaptions: timeline.setAutoCaptions,
 		setAutoCaptionSettings: timeline.setAutoCaptionSettings,

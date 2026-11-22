@@ -42,6 +42,7 @@ import {
 	getMatchingCursorMotionPresetId,
 } from "./cursorMotionPresets";
 import { loadEditorPreferences, saveEditorPreferences } from "./editorPreferences";
+import type { AddManualCaptionOptions } from "./hooks/useCaptionCommands";
 import { getDefaultBorderRadiusPercent } from "./projectPersistence";
 import { SliderControl } from "./SliderControl";
 import { KeyboardShortcutsDialog } from "./TutorialHelp";
@@ -641,7 +642,14 @@ interface SettingsPanelProps {
 	onDownloadWhisperSmallModel?: () => void;
 	onDeleteWhisperSmallModel?: () => void;
 	captionCurrentTimeMs?: number;
+	captionVideoDurationMs?: number;
+	isVideoPlaying?: boolean;
+	onTogglePlayPause?: () => void;
+	onSeekBySeconds?: (deltaSeconds: number) => void;
 	selectedCaptionId?: string | null;
+	onSelectCaption?: (id: string | null) => void;
+	onAddManualCaption?: (options?: AddManualCaptionOptions) => CaptionCue | null;
+	onImportCaptions?: (cues: CaptionCue[], mode: "replace" | "append") => void;
 	onBeginCaptionEdit?: (id: string) => void;
 	onCaptionTextEdit?: (id: string, text: string) => void;
 	onCaptionRetime?: (id: string, span: CaptionRetimeSpan) => void;
@@ -1087,7 +1095,14 @@ export function SettingsPanel({
 	onDownloadWhisperSmallModel,
 	onDeleteWhisperSmallModel,
 	captionCurrentTimeMs = 0,
+	captionVideoDurationMs = 0,
+	isVideoPlaying = false,
+	onTogglePlayPause,
+	onSeekBySeconds,
 	selectedCaptionId = null,
+	onSelectCaption,
+	onAddManualCaption,
+	onImportCaptions,
 	onBeginCaptionEdit,
 	onCaptionTextEdit,
 	onCaptionRetime,
@@ -1122,6 +1137,14 @@ export function SettingsPanel({
 		[builtInWallpapers],
 	);
 	const captionCueCount = autoCaptions.length;
+	const [captionsTab, setCaptionsTab] = useState<"manual" | "style" | "auto">("manual");
+
+	useEffect(() => {
+		if (selectedCaptionId !== null) {
+			setCaptionsTab("manual");
+		}
+	}, [selectedCaptionId]);
+
 	const updateAutoCaptionSettings = (partial: Partial<AutoCaptionSettings>) => {
 		onAutoCaptionSettingsChange?.({
 			...autoCaptionSettings,
@@ -2279,17 +2302,15 @@ export function SettingsPanel({
 	);
 
 	const captionsSectionContent = (
-		<section className="flex flex-col gap-2">
+		<section className="flex flex-col gap-3 pb-4">
 			<div className="flex items-center justify-between gap-3">
-				<div className="flex items-center gap-3">
+				<div className="flex items-center gap-2">
 					<SectionLabel>{tSettings("sections.captions", "Captions")}</SectionLabel>
-					<button
-						type="button"
-						onClick={() => onAutoCaptionSettingsChange?.(DEFAULT_AUTO_CAPTION_SETTINGS)}
-						className="text-[10px] text-[#2563EB] transition-opacity hover:opacity-80"
-					>
-						{t("common.actions.reset", "Reset")}
-					</button>
+					{captionCueCount > 0 ? (
+						<span className="rounded-full bg-[#2563EB]/15 px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-[#60A5FA]">
+							{captionCueCount}
+						</span>
+					) : null}
 				</div>
 				<div className="flex items-center gap-2 text-[10px] text-muted-foreground">
 					<span>{tSettings("captions.enabled", "Show")}</span>
@@ -2301,238 +2322,330 @@ export function SettingsPanel({
 				</div>
 			</div>
 
-			<div className="rounded-lg bg-foreground/[0.03] px-2.5 py-2 space-y-3">
-				<div>
-					<Button
-						type="button"
-						variant="outline"
-						onClick={onPickWhisperModel}
-						className="h-10 w-full rounded-xl border-foreground/10 bg-foreground/5 px-4 text-sm text-foreground hover:bg-foreground/10 hover:text-foreground"
-					>
-						{tSettings("captions.selectModel", "Select Model")}
-					</Button>
-				</div>
-				<div className="flex items-center justify-between gap-3">
-					<div className="text-sm font-medium text-foreground">
-						{tSettings("captions.language", "Language")}
-					</div>
-					<Select
-						value={autoCaptionSettings.language || "auto"}
-						onValueChange={(value) => updateAutoCaptionSettings({ language: value })}
-					>
-						<SelectTrigger className="h-10 w-[180px] rounded-xl border-foreground/10 bg-foreground/5 text-sm text-foreground hover:bg-foreground/10">
-							<SelectValue />
-						</SelectTrigger>
-						<SelectContent className="border-foreground/10 bg-editor-surface-alt text-foreground">
-							{CAPTION_LANGUAGE_OPTIONS.map((option) => (
-								<SelectItem key={option.value} value={option.value}>
+			<LayoutGroup id="captions-panel-switcher">
+				<div className="grid h-8 w-full grid-cols-3 rounded-xl border border-foreground/10 bg-foreground/[0.04] p-1">
+					{(
+						[
+							{
+								value: "manual",
+								label: tSettings("captions.tabs.manual", "Write"),
+							},
+							{
+								value: "style",
+								label: tSettings("captions.tabs.style", "Style"),
+							},
+							{
+								value: "auto",
+								label: tSettings("captions.tabs.auto", "Auto"),
+							},
+						] as const
+					).map((option) => {
+						const isActive = captionsTab === option.value;
+						return (
+							<button
+								key={option.value}
+								type="button"
+								onClick={() => setCaptionsTab(option.value)}
+								className="relative rounded-lg text-[10px] font-semibold tracking-wide transition-colors"
+							>
+								{isActive ? (
+									<motion.span
+										layoutId="captions-panel-pill"
+										className="absolute inset-0 rounded-lg bg-[#2563EB]"
+										transition={{
+											type: "spring",
+											stiffness: 420,
+											damping: 34,
+										}}
+									/>
+								) : null}
+								<span
+									className={cn(
+										"relative z-10",
+										isActive
+											? "text-white"
+											: "text-muted-foreground hover:text-foreground",
+									)}
+								>
 									{option.label}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
+								</span>
+							</button>
+						);
+					})}
 				</div>
-				<div className="flex flex-wrap items-center gap-2">
-					<div className="grid w-full grid-cols-2 gap-2">
-						{whisperModelDownloadStatus === "downloading" ? (
-							<Button
-								type="button"
-								disabled
-								className="h-10 w-full rounded-xl bg-foreground/10 px-4 text-sm font-medium text-foreground hover:bg-foreground/10"
-							>
-								{tSettings("captions.downloading", "Downloading...")}{" "}
-								{Math.round(whisperModelDownloadProgress)}%
-							</Button>
-						) : whisperModelPath ? (
-							<Button
-								type="button"
-								variant="outline"
-								onClick={onDeleteWhisperSmallModel}
-								className="h-10 w-full rounded-xl border-foreground/10 bg-foreground/5 px-4 text-sm text-foreground hover:bg-foreground/10 hover:text-foreground"
-							>
-								{tSettings("captions.deleteModel", "Delete Model")}
-							</Button>
-						) : (
-							<Button
-								type="button"
-								onClick={onDownloadWhisperSmallModel}
-								className="h-10 w-full rounded-xl bg-[#2563EB] px-4 text-sm font-medium text-white hover:bg-[#2563EB]/90"
-							>
-								{tSettings("captions.downloadModel", "Download Model")}
-							</Button>
-						)}
+			</LayoutGroup>
+
+			{captionsTab === "manual" ? (
+				<CaptionListPanel
+					cues={autoCaptions}
+					selectedCaptionId={selectedCaptionId}
+					currentTimeMs={captionCurrentTimeMs}
+					videoDurationMs={captionVideoDurationMs}
+					isPlaying={isVideoPlaying}
+					onTogglePlayPause={onTogglePlayPause}
+					onSeekBySeconds={onSeekBySeconds}
+					onSelectCaption={(id) => onSelectCaption?.(id)}
+					onAddManualCaption={(options) => onAddManualCaption?.(options) ?? null}
+					onImportCaptions={(cues, mode) => onImportCaptions?.(cues, mode)}
+					onClearCaptions={() => onClearAutoCaptions?.()}
+					onBeginCaptionEdit={(id) => onBeginCaptionEdit?.(id)}
+					onCaptionTextEdit={(id, text) => onCaptionTextEdit?.(id, text)}
+					onCaptionRetime={(id, span) => onCaptionRetime?.(id, span)}
+					onCaptionSplit={(id, atMs) => onCaptionSplit?.(id, atMs)}
+					onCaptionMerge={(idA, idB) => onCaptionMerge?.(idA, idB)}
+					onCaptionDelete={(id) => onCaptionDelete?.(id)}
+				/>
+			) : captionsTab === "style" ? (
+				<div className="flex flex-col gap-1.5">
+					<div className="flex items-center justify-end">
+						<button
+							type="button"
+							onClick={() =>
+								onAutoCaptionSettingsChange?.(DEFAULT_AUTO_CAPTION_SETTINGS)
+							}
+							className="text-[10px] text-[#2563EB] transition-opacity hover:opacity-80"
+						>
+							{t("common.actions.reset", "Reset")}
+						</button>
+					</div>
+					<div className="flex items-center justify-between gap-3 rounded-lg bg-foreground/[0.03] px-2.5 py-2">
+						<div className="text-[10px] text-muted-foreground">
+							{tSettings("captions.animation", "Animation")}
+						</div>
+						<Select
+							value={autoCaptionSettings.animationStyle}
+							onValueChange={(value) =>
+								updateAutoCaptionSettings({
+									animationStyle: value as AutoCaptionAnimation,
+								})
+							}
+						>
+							<SelectTrigger className="h-9 w-[160px] rounded-xl border-foreground/10 bg-foreground/5 text-sm text-foreground hover:bg-foreground/10">
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent className="border-foreground/10 bg-editor-surface-alt text-foreground">
+								{CAPTION_ANIMATION_OPTIONS.map((option) => (
+									<SelectItem key={option.value} value={option.value}>
+										{option.label}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+					</div>
+					<div className="flex items-center justify-between gap-3 rounded-lg bg-foreground/[0.03] px-2.5 py-2">
+						<div className="text-[10px] text-muted-foreground">
+							{tSettings("captions.timelineQuickAdd", "Hover to add on timeline")}
+						</div>
+						<Switch
+							checked={autoCaptionSettings.timelineQuickAdd}
+							onCheckedChange={(timelineQuickAdd) =>
+								updateAutoCaptionSettings({ timelineQuickAdd })
+							}
+							aria-label={tSettings(
+								"captions.timelineQuickAdd",
+								"Hover to add on timeline",
+							)}
+							className="data-[state=checked]:bg-[#2563EB] scale-75"
+						/>
+					</div>
+					<label className="flex items-center justify-between rounded-lg bg-foreground/[0.03] px-2.5 py-2">
+						<span className="text-[10px] text-muted-foreground">
+							{tSettings("captions.textColor", "Text color")}
+						</span>
+						<input
+							type="color"
+							value={autoCaptionSettings.textColor}
+							onChange={(event) =>
+								updateAutoCaptionSettings({ textColor: event.target.value })
+							}
+							className="h-7 w-10 rounded border border-foreground/10 bg-transparent"
+						/>
+					</label>
+					<div className="mb-1 text-sm font-medium text-foreground">
+						{tSettings("captions.fontSettings", "Font Settings")}
+					</div>
+					<SliderControl
+						label={tSettings("captions.fontSize", "Font size")}
+						value={autoCaptionSettings.fontSize}
+						defaultValue={DEFAULT_AUTO_CAPTION_SETTINGS.fontSize}
+						min={16}
+						max={72}
+						step={1}
+						onChange={(value) => updateAutoCaptionSettings({ fontSize: value })}
+						formatValue={(value) => `${Math.round(value)}px`}
+						parseInput={(text) => parseFloat(text.replace(/px$/, ""))}
+					/>
+					<SliderControl
+						label={tSettings("captions.rowCount", "Rows")}
+						value={autoCaptionSettings.maxRows}
+						defaultValue={DEFAULT_AUTO_CAPTION_SETTINGS.maxRows}
+						min={1}
+						max={4}
+						step={1}
+						onChange={(value) =>
+							updateAutoCaptionSettings({ maxRows: Math.round(value) })
+						}
+						formatValue={(value) => `${Math.round(value)}`}
+						parseInput={(text) => parseFloat(text)}
+					/>
+					<SliderControl
+						label={tSettings("captions.bottomOffset", "Bottom offset")}
+						value={autoCaptionSettings.bottomOffset}
+						defaultValue={DEFAULT_AUTO_CAPTION_SETTINGS.bottomOffset}
+						min={0}
+						max={30}
+						step={1}
+						onChange={(value) => updateAutoCaptionSettings({ bottomOffset: value })}
+						formatValue={(value) => `${Math.round(value)}%`}
+						parseInput={(text) => parseFloat(text.replace(/%$/, ""))}
+					/>
+					<SliderControl
+						label={tSettings("captions.maxWidth", "Max width")}
+						value={autoCaptionSettings.maxWidth}
+						defaultValue={DEFAULT_AUTO_CAPTION_SETTINGS.maxWidth}
+						min={40}
+						max={95}
+						step={1}
+						onChange={(value) => updateAutoCaptionSettings({ maxWidth: value })}
+						formatValue={(value) => `${Math.round(value)}%`}
+						parseInput={(text) => parseFloat(text.replace(/%$/, ""))}
+					/>
+					<SliderControl
+						label={tSettings("captions.boxRadius", "Box radius")}
+						value={autoCaptionSettings.boxRadius}
+						defaultValue={DEFAULT_AUTO_CAPTION_SETTINGS.boxRadius}
+						min={0}
+						max={40}
+						step={0.5}
+						onChange={(value) => updateAutoCaptionSettings({ boxRadius: value })}
+						formatValue={(value) =>
+							`${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)}px`
+						}
+						parseInput={(text) => parseFloat(text.replace(/px$/, ""))}
+					/>
+					<SliderControl
+						label={tSettings("captions.backgroundOpacity", "Background opacity")}
+						value={autoCaptionSettings.backgroundOpacity}
+						defaultValue={DEFAULT_AUTO_CAPTION_SETTINGS.backgroundOpacity}
+						min={0}
+						max={1}
+						step={0.01}
+						onChange={(value) =>
+							updateAutoCaptionSettings({ backgroundOpacity: value })
+						}
+						formatValue={(value) => `${Math.round(value * 100)}%`}
+						parseInput={(text) => parseFloat(text.replace(/%$/, "")) / 100}
+					/>
+				</div>
+			) : (
+				<div className="rounded-lg bg-foreground/[0.03] px-2.5 py-2 space-y-3">
+					<div>
 						<Button
 							type="button"
 							variant="outline"
-							onClick={onClearAutoCaptions}
-							disabled={captionCueCount === 0}
-							className="h-10 w-full rounded-xl border-foreground/10 bg-foreground/5 px-4 text-sm text-foreground hover:bg-foreground/10 hover:text-foreground disabled:opacity-50"
+							onClick={onPickWhisperModel}
+							className="h-10 w-full rounded-xl border-foreground/10 bg-foreground/5 px-4 text-sm text-foreground hover:bg-foreground/10 hover:text-foreground"
 						>
-							{tSettings("captions.clearFull", "Clear Captions")}
+							{tSettings("captions.selectModel", "Select Model")}
 						</Button>
 					</div>
-				</div>
-				<div className="flex flex-col gap-2">
-					<Button
-						type="button"
-						onClick={onGenerateAutoCaptions}
-						disabled={isGeneratingCaptions || !whisperModelPath}
-						className="h-10 w-full rounded-xl bg-[#2563EB] px-4 text-sm font-medium text-white hover:bg-[#2563EB]/90 disabled:opacity-60"
-					>
-						{isGeneratingCaptions
-							? tSettings("captions.generating", "Generating...")
-							: captionCueCount > 0
-								? tSettings("captions.regenerateFull", "Regenerate Captions")
-								: tSettings("captions.generateFull", "Generate Captions")}
-					</Button>
-					{isGeneratingCaptions ? (
-						<div className="space-y-1">
-							<div className="text-xs text-muted-foreground">
-								{tSettings(
-									"captions.generatingStatus",
-									"Generating captions. This can take a moment.",
-								)}
+					<div className="flex items-center justify-between gap-3">
+						<div className="text-sm font-medium text-foreground">
+							{tSettings("captions.language", "Language")}
+						</div>
+						<Select
+							value={autoCaptionSettings.language || "auto"}
+							onValueChange={(value) =>
+								updateAutoCaptionSettings({ language: value })
+							}
+						>
+							<SelectTrigger className="h-10 w-[180px] rounded-xl border-foreground/10 bg-foreground/5 text-sm text-foreground hover:bg-foreground/10">
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent className="border-foreground/10 bg-editor-surface-alt text-foreground">
+								{CAPTION_LANGUAGE_OPTIONS.map((option) => (
+									<SelectItem key={option.value} value={option.value}>
+										{option.label}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+					</div>
+					<div className="flex flex-wrap items-center gap-2">
+						<div className="grid w-full grid-cols-2 gap-2">
+							{whisperModelDownloadStatus === "downloading" ? (
+								<Button
+									type="button"
+									disabled
+									className="h-10 w-full rounded-xl bg-foreground/10 px-4 text-sm font-medium text-foreground hover:bg-foreground/10"
+								>
+									{tSettings("captions.downloading", "Downloading...")}{" "}
+									{Math.round(whisperModelDownloadProgress)}%
+								</Button>
+							) : whisperModelPath ? (
+								<Button
+									type="button"
+									variant="outline"
+									onClick={onDeleteWhisperSmallModel}
+									className="h-10 w-full rounded-xl border-foreground/10 bg-foreground/5 px-4 text-sm text-foreground hover:bg-foreground/10 hover:text-foreground"
+								>
+									{tSettings("captions.deleteModel", "Delete Model")}
+								</Button>
+							) : (
+								<Button
+									type="button"
+									onClick={onDownloadWhisperSmallModel}
+									className="h-10 w-full rounded-xl bg-[#2563EB] px-4 text-sm font-medium text-white hover:bg-[#2563EB]/90"
+								>
+									{tSettings("captions.downloadModel", "Download Model")}
+								</Button>
+							)}
+							<Button
+								type="button"
+								variant="outline"
+								onClick={onClearAutoCaptions}
+								disabled={captionCueCount === 0}
+								className="h-10 w-full rounded-xl border-foreground/10 bg-foreground/5 px-4 text-sm text-foreground hover:bg-foreground/10 hover:text-foreground disabled:opacity-50"
+							>
+								{tSettings("captions.clearFull", "Clear Captions")}
+							</Button>
+						</div>
+					</div>
+					<div className="flex flex-col gap-2">
+						<Button
+							type="button"
+							onClick={onGenerateAutoCaptions}
+							disabled={isGeneratingCaptions || !whisperModelPath}
+							className="h-10 w-full rounded-xl bg-[#2563EB] px-4 text-sm font-medium text-white hover:bg-[#2563EB]/90 disabled:opacity-60"
+						>
+							{isGeneratingCaptions
+								? tSettings("captions.generating", "Generating...")
+								: captionCueCount > 0
+									? tSettings("captions.regenerateFull", "Regenerate Captions")
+									: tSettings("captions.generateFull", "Generate Captions")}
+						</Button>
+						{isGeneratingCaptions ? (
+							<div className="space-y-1">
+								<div className="text-xs text-muted-foreground">
+									{tSettings(
+										"captions.generatingStatus",
+										"Generating captions. This can take a moment.",
+									)}
+								</div>
+								<div className="indeterminate-progress h-2 rounded-full bg-foreground/5" />
 							</div>
-							<div className="indeterminate-progress h-2 rounded-full bg-foreground/5" />
+						) : null}
+					</div>
+					{whisperModelDownloadStatus === "downloading" ? (
+						<div className="h-2 overflow-hidden rounded-full bg-foreground/5">
+							<div
+								className="h-full rounded-full bg-[#2196f3] transition-all"
+								style={{ width: `${whisperModelDownloadProgress}%` }}
+							/>
 						</div>
 					) : null}
 				</div>
-				{whisperModelDownloadStatus === "downloading" ? (
-					<div className="h-2 overflow-hidden rounded-full bg-foreground/5">
-						<div
-							className="h-full rounded-full bg-[#2196f3] transition-all"
-							style={{ width: `${whisperModelDownloadProgress}%` }}
-						/>
-					</div>
-				) : null}
-			</div>
-
-			<div className="flex flex-col gap-1.5">
-				<div className="flex items-center justify-between gap-3 rounded-lg bg-foreground/[0.03] px-2.5 py-2">
-					<div className="text-[10px] text-muted-foreground">
-						{tSettings("captions.animation", "Animation")}
-					</div>
-					<Select
-						value={autoCaptionSettings.animationStyle}
-						onValueChange={(value) =>
-							updateAutoCaptionSettings({
-								animationStyle: value as AutoCaptionAnimation,
-							})
-						}
-					>
-						<SelectTrigger className="h-9 w-[160px] rounded-xl border-foreground/10 bg-foreground/5 text-sm text-foreground hover:bg-foreground/10">
-							<SelectValue />
-						</SelectTrigger>
-						<SelectContent className="border-foreground/10 bg-editor-surface-alt text-foreground">
-							{CAPTION_ANIMATION_OPTIONS.map((option) => (
-								<SelectItem key={option.value} value={option.value}>
-									{option.label}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
-				</div>
-				<div className="flex items-center justify-between gap-3 rounded-lg bg-foreground/[0.03] px-2.5 py-2">
-					<div className="text-[10px] text-muted-foreground">
-						{tSettings("captions.timelineQuickAdd", "Hover to add on timeline")}
-					</div>
-					<Switch
-						checked={autoCaptionSettings.timelineQuickAdd}
-						onCheckedChange={(timelineQuickAdd) =>
-							updateAutoCaptionSettings({ timelineQuickAdd })
-						}
-						aria-label={tSettings(
-							"captions.timelineQuickAdd",
-							"Hover to add on timeline",
-						)}
-						className="data-[state=checked]:bg-[#2563EB] scale-75"
-					/>
-				</div>
-				<label className="flex items-center justify-between rounded-lg bg-foreground/[0.03] px-2.5 py-2">
-					<span className="text-[10px] text-muted-foreground">
-						{tSettings("captions.textColor", "Text color")}
-					</span>
-					<input
-						type="color"
-						value={autoCaptionSettings.textColor}
-						onChange={(event) =>
-							updateAutoCaptionSettings({ textColor: event.target.value })
-						}
-						className="h-7 w-10 rounded border border-foreground/10 bg-transparent"
-					/>
-				</label>
-				<div className="mb-1 text-sm font-medium text-foreground">
-					{tSettings("captions.fontSettings", "Font Settings")}
-				</div>
-				<SliderControl
-					label={tSettings("captions.fontSize", "Font size")}
-					value={autoCaptionSettings.fontSize}
-					defaultValue={DEFAULT_AUTO_CAPTION_SETTINGS.fontSize}
-					min={16}
-					max={72}
-					step={1}
-					onChange={(value) => updateAutoCaptionSettings({ fontSize: value })}
-					formatValue={(value) => `${Math.round(value)}px`}
-					parseInput={(text) => parseFloat(text.replace(/px$/, ""))}
-				/>
-				<SliderControl
-					label={tSettings("captions.rowCount", "Rows")}
-					value={autoCaptionSettings.maxRows}
-					defaultValue={DEFAULT_AUTO_CAPTION_SETTINGS.maxRows}
-					min={1}
-					max={4}
-					step={1}
-					onChange={(value) => updateAutoCaptionSettings({ maxRows: Math.round(value) })}
-					formatValue={(value) => `${Math.round(value)}`}
-					parseInput={(text) => parseFloat(text)}
-				/>
-				<SliderControl
-					label={tSettings("captions.bottomOffset", "Bottom offset")}
-					value={autoCaptionSettings.bottomOffset}
-					defaultValue={DEFAULT_AUTO_CAPTION_SETTINGS.bottomOffset}
-					min={0}
-					max={30}
-					step={1}
-					onChange={(value) => updateAutoCaptionSettings({ bottomOffset: value })}
-					formatValue={(value) => `${Math.round(value)}%`}
-					parseInput={(text) => parseFloat(text.replace(/%$/, ""))}
-				/>
-				<SliderControl
-					label={tSettings("captions.maxWidth", "Max width")}
-					value={autoCaptionSettings.maxWidth}
-					defaultValue={DEFAULT_AUTO_CAPTION_SETTINGS.maxWidth}
-					min={40}
-					max={95}
-					step={1}
-					onChange={(value) => updateAutoCaptionSettings({ maxWidth: value })}
-					formatValue={(value) => `${Math.round(value)}%`}
-					parseInput={(text) => parseFloat(text.replace(/%$/, ""))}
-				/>
-				<SliderControl
-					label={tSettings("captions.boxRadius", "Box radius")}
-					value={autoCaptionSettings.boxRadius}
-					defaultValue={DEFAULT_AUTO_CAPTION_SETTINGS.boxRadius}
-					min={0}
-					max={40}
-					step={0.5}
-					onChange={(value) => updateAutoCaptionSettings({ boxRadius: value })}
-					formatValue={(value) =>
-						`${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)}px`
-					}
-					parseInput={(text) => parseFloat(text.replace(/px$/, ""))}
-				/>
-				<SliderControl
-					label={tSettings("captions.backgroundOpacity", "Background opacity")}
-					value={autoCaptionSettings.backgroundOpacity}
-					defaultValue={DEFAULT_AUTO_CAPTION_SETTINGS.backgroundOpacity}
-					min={0}
-					max={1}
-					step={0.01}
-					onChange={(value) => updateAutoCaptionSettings({ backgroundOpacity: value })}
-					formatValue={(value) => `${Math.round(value * 100)}%`}
-					parseInput={(text) => parseFloat(text.replace(/%$/, "")) / 100}
-				/>
-			</div>
+			)}
 		</section>
 	);
 
@@ -3172,34 +3285,6 @@ export function SettingsPanel({
 			</section>
 		);
 
-		const captionSectionContent = (
-			<section className="flex flex-col gap-2">
-				<SectionLabel>{tSettings("sections.caption", "Caption")}</SectionLabel>
-				{selectedCaptionId !== null ? (
-					<CaptionListPanel
-						cues={autoCaptions}
-						selectedCaptionId={selectedCaptionId}
-						currentTimeMs={captionCurrentTimeMs}
-						onBeginCaptionEdit={(id) => onBeginCaptionEdit?.(id)}
-						onCaptionTextEdit={(id, text) => onCaptionTextEdit?.(id, text)}
-						onCaptionRetime={(id, span) => onCaptionRetime?.(id, span)}
-						onCaptionSplit={(id, atMs) => onCaptionSplit?.(id, atMs)}
-						onCaptionMerge={(idA, idB) => onCaptionMerge?.(idA, idB)}
-						onCaptionDelete={(id) => onCaptionDelete?.(id)}
-					/>
-				) : (
-					<div className="rounded-lg bg-foreground/[0.03] px-2.5 py-6 text-center">
-						<p className="text-[11px] text-muted-foreground">
-							{tSettings(
-								"captions.selectOnTimeline",
-								"Select a caption on the timeline to edit it.",
-							)}
-						</p>
-					</div>
-				)}
-			</section>
-		);
-
 		switch (activeEffectSection) {
 			case "settings":
 				return settingsSectionContent;
@@ -3216,9 +3301,8 @@ export function SettingsPanel({
 			case "crop":
 				return sceneSectionContent;
 			case "captions":
-				return captionsSectionContent;
 			case "caption":
-				return captionSectionContent;
+				return captionsSectionContent;
 			case "cursor":
 				return (
 					<section className="flex flex-col gap-2">

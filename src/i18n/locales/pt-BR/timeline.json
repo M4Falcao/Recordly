@@ -37,5 +37,9 @@
 	},
 	"addSpeed": "Adicionar velocidade (S)",
 	"resizeLeft": "Redimensionar para a esquerda",
-	"resizeRight": "Redimensionar para a direita"
+	"resizeRight": "Redimensionar para a direita",
+	"caption": {
+		"label": "Legenda",
+		"addCaption": "Adicionar legenda (S)"
+	}
 }

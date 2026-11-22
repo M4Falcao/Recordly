@@ -5,6 +5,10 @@ import {
 } from "./captionEditing";
 import type { CaptionCue, CaptionCueWord } from "./types";
 
+export const DEFAULT_MANUAL_CAPTION_DURATION_MS = 2_000;
+export const MIN_MANUAL_CAPTION_DURATION_MS = 300;
+export const MAX_MANUAL_CAPTION_DURATION_MS = 5_000;
+
 export interface CaptionRetimeSpan {
 	startMs: number;
 	endMs: number;
@@ -213,4 +217,138 @@ export function mergeCues(cues: CaptionCue[], idA: string, idB: string): Caption
 export function deleteCue(cues: CaptionCue[], id: string): CaptionCue[] {
 	const next = cues.filter((cue) => cue.id !== id);
 	return next.length === cues.length ? cues : sortCaptionCues(next);
+}
+
+/** Estimate a readable display duration for a subtitle line based on word count. */
+export function estimateCaptionDurationMs(text: string): number {
+	const words = text.trim().match(/\S+/g) ?? [];
+	if (words.length === 0) {
+		return DEFAULT_MANUAL_CAPTION_DURATION_MS;
+	}
+	return Math.min(MAX_MANUAL_CAPTION_DURATION_MS, Math.max(1_500, 650 + words.length * 360));
+}
+
+/**
+ * Find the next non-overlapping caption span at or after `preferredStartMs`.
+ * Returns null if no gap of at least `minDurationMs` remains before `maxDurationMs`.
+ */
+export function findNextAvailableCaptionSpan(
+	cues: ReadonlyArray<{ startMs: number; endMs: number }>,
+	preferredStartMs: number,
+	options: {
+		durationMs?: number;
+		maxDurationMs: number;
+		minDurationMs?: number;
+	},
+): CaptionRetimeSpan | null {
+	const maxDurationMs = Math.round(options.maxDurationMs);
+	if (!Number.isFinite(maxDurationMs) || maxDurationMs <= 0) {
+		return null;
+	}
+
+	const minDuration = Math.max(
+		1,
+		Math.round(options.minDurationMs ?? MIN_MANUAL_CAPTION_DURATION_MS),
+	);
+	const requestedDuration = Math.max(
+		minDuration,
+		Math.round(options.durationMs ?? DEFAULT_MANUAL_CAPTION_DURATION_MS),
+	);
+	let cursor = Math.max(0, Math.min(Math.round(preferredStartMs), maxDurationMs));
+
+	const sorted = [...cues].sort(
+		(left, right) => left.startMs - right.startMs || left.endMs - right.endMs,
+	);
+
+	for (const cue of sorted) {
+		if (cue.endMs <= cursor) {
+			continue;
+		}
+		if (cue.startMs >= cursor + minDuration) {
+			const endMs = Math.min(cursor + requestedDuration, cue.startMs, maxDurationMs);
+			return endMs > cursor ? { startMs: cursor, endMs } : null;
+		}
+		cursor = Math.max(cursor, Math.round(cue.endMs));
+	}
+
+	if (maxDurationMs - cursor >= minDuration) {
+		return {
+			startMs: cursor,
+			endMs: Math.min(cursor + requestedDuration, maxDurationMs),
+		};
+	}
+
+	return null;
+}
+
+/** Format milliseconds as `M:SS.mmm` for exact timecode inputs. */
+export function formatCaptionTimecode(ms: number): string {
+	const safeMs = Math.max(0, Math.round(ms));
+	const minutes = Math.floor(safeMs / 60_000);
+	const seconds = Math.floor((safeMs % 60_000) / 1_000);
+	const millis = safeMs % 1_000;
+	return `${minutes}:${String(seconds).padStart(2, "0")}.${String(millis).padStart(3, "0")}`;
+}
+
+/** Format milliseconds as `M:SS.d` for compact cue list badges and live previews. */
+export function formatCaptionShortTimecode(ms: number): string {
+	const safeMs = Math.max(0, Math.round(ms));
+	const totalTenths = Math.floor(safeMs / 100);
+	const tenths = totalTenths % 10;
+	const totalSeconds = Math.floor(totalTenths / 10);
+	const minutes = Math.floor(totalSeconds / 60);
+	const seconds = totalSeconds % 60;
+	return `${minutes}:${String(seconds).padStart(2, "0")}.${tenths}`;
+}
+
+/**
+ * Parse a timecode string (`SS`, `SS.mmm`, `M:SS`, `M:SS.mmm`, `H:MM:SS`, `H:MM:SS.mmm`)
+ * accepting either `.` or `,` as the decimal separator. Returns null if invalid.
+ */
+export function parseCaptionTimecode(value: string): number | null {
+	const trimmed = value.trim();
+	if (!trimmed) {
+		return null;
+	}
+	const match = trimmed.match(
+		/^(?:(\d+):(\d{1,2}):(\d{1,2})|(\d+):(\d{1,2})|(\d+))(?:[.,](\d{1,3}))?$/,
+	);
+	if (!match) {
+		return null;
+	}
+
+	let hours = 0;
+	let minutes = 0;
+	let seconds = 0;
+	if (match[1] !== undefined) {
+		hours = Number.parseInt(match[1], 10);
+		minutes = Number.parseInt(match[2], 10);
+		seconds = Number.parseInt(match[3], 10);
+		if (minutes >= 60 || seconds >= 60) {
+			return null;
+		}
+	} else if (match[4] !== undefined) {
+		minutes = Number.parseInt(match[4], 10);
+		seconds = Number.parseInt(match[5], 10);
+		if (seconds >= 60) {
+			return null;
+		}
+	} else {
+		seconds = Number.parseInt(match[6], 10);
+	}
+
+	const millis = match[7] ? Number.parseInt(match[7].padEnd(3, "0"), 10) : 0;
+	return ((hours * 60 + minutes) * 60 + seconds) * 1_000 + millis;
+}
+
+/** Merge or replace caption cues while preserving chronological order. */
+export function mergeCaptionCues(
+	existing: CaptionCue[],
+	incoming: CaptionCue[],
+	mode: "replace" | "append",
+): CaptionCue[] {
+	if (mode === "replace") {
+		return sortCaptionCues(incoming);
+	}
+	return sortCaptionCues([...existing, ...incoming]);
 }
